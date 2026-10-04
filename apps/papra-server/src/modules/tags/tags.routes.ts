@@ -14,7 +14,13 @@ import { ensureUserIsInOrganization } from '../organizations/organizations.useca
 import { validateJsonBody, validateParams } from '../shared/validation/validation';
 import { createTagNotFoundError } from './tags.errors';
 import { createTagsRepository } from './tags.repository';
-import { tagColorSchema, tagDescriptionSchema, tagIdSchema, tagNameSchema } from './tags.schemas';
+import {
+  tagColorSchema,
+  tagDescriptionSchema,
+  tagIdSchema,
+  tagIsVisibleSchema,
+  tagNameSchema,
+} from './tags.schemas';
 import { addTagToDocument, createTag } from './tags.usecases';
 
 export function registerTagsRoutes(context: RouteDefinitionContext) {
@@ -40,13 +46,14 @@ function setupCreateNewTagRoute({ app, db, config }: RouteDefinitionContext) {
         name: tagNameSchema,
         color: tagColorSchema,
         description: v.optional(tagDescriptionSchema),
+        isVisible: v.optional(tagIsVisibleSchema, true),
       }),
     ),
     async (context) => {
       const { userId } = getUser({ context });
 
       const { organizationId } = context.req.valid('param');
-      const { name, color, description } = context.req.valid('json');
+      const { name, color, description, isVisible } = context.req.valid('json');
 
       const tagsRepository = createTagsRepository({ db });
       const organizationsRepository = createOrganizationsRepository({ db });
@@ -58,6 +65,7 @@ function setupCreateNewTagRoute({ app, db, config }: RouteDefinitionContext) {
         name,
         color,
         description,
+        isVisible,
         config,
         tagsRepository,
       });
@@ -112,13 +120,14 @@ function setupUpdateTagRoute({ app, db }: RouteDefinitionContext) {
         name: v.optional(tagNameSchema),
         color: v.optional(tagColorSchema),
         description: v.optional(tagDescriptionSchema),
+        isVisible: v.optional(tagIsVisibleSchema),
       }),
     ),
     async (context) => {
       const { userId } = getUser({ context });
 
       const { organizationId, tagId } = context.req.valid('param');
-      const { name, color, description } = context.req.valid('json');
+      const { name, color, description, isVisible } = context.req.valid('json');
 
       const tagsRepository = createTagsRepository({ db });
       const organizationsRepository = createOrganizationsRepository({ db });
@@ -131,6 +140,7 @@ function setupUpdateTagRoute({ app, db }: RouteDefinitionContext) {
         name,
         color,
         description,
+        isVisible,
       });
 
       if (!tag) {

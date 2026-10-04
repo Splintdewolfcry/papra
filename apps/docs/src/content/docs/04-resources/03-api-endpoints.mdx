@@ -264,11 +264,14 @@ Get the activity log of a document.
 
 Create a new tag in the organization.
 
+Tag names can express a hierarchy using the `/` separator, for instance `LA/School` is the `School` tag nested under the `LA` group.
+
 - Required API key permissions: `tags:create`
 - Body (form-data)
   - `name`: The tag name.
   - `color`: The tag color in hex format (e.g. `#000000`).
   - `description`: (optional) The tag description.
+  - `isVisible`: (optional, default: `true`) Whether the tag is suggested in the tag pickers of the apps. Hidden tags can still be attached to documents.
 - Response (JSON)
   - `tag`: The created tag.
 
@@ -286,13 +289,14 @@ List all tags in the organization.
 
 **PUT** `/api/organizations/:organizationId/tags/:tagId`
 
-Change the name, color or description of a tag.
+Change the name, color, description or visibility of a tag.
 
 - Required API key permissions: `tags:update`
 - Body
   - `name`: (optional) The tag name.
   - `color`: (optional) The tag color in hex format (e.g. `#000000`).
   - `description`: (optional) The tag description.
+  - `isVisible`: (optional) Whether the tag is suggested in the tag pickers of the apps.
 - Response (JSON)
   - `tag`: The updated tag.
 

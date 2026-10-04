@@ -12,6 +12,7 @@ import {
   createTagAlreadyExistsError,
   createTagNotFoundError,
 } from './tags.errors';
+import { formatTagName } from './tags.models';
 import { normalizeTagName } from './tags.repository.models';
 import { documentsTagsTable, tagsTable } from './tags.table';
 
@@ -149,15 +150,26 @@ async function createTag({
   tag,
   db,
 }: {
-  tag: { name: string; description?: string | null; color: string; organizationId: string };
+  tag: {
+    name: string;
+    description?: string | null;
+    color: string;
+    organizationId: string;
+    isVisible?: boolean;
+  };
   db: Database;
 }) {
+  // Tag names are hierarchy paths, they are canonicalized so that `LA / School` and `LA/School`
+  // are the same tag
+  const name = formatTagName({ name: tag.name });
+
   const [result, error] = await safely(
     db
       .insert(tagsTable)
       .values({
         ...tag,
-        normalizedName: normalizeTagName({ name: tag.name }),
+        name,
+        normalizedName: normalizeTagName({ name }),
       })
       .returning(),
   );
@@ -200,6 +212,7 @@ async function updateTag({
   name,
   description,
   color,
+  isVisible,
   db,
 }: {
   tagId: string;
@@ -207,17 +220,25 @@ async function updateTag({
   name?: string;
   description?: string;
   color?: string;
+  isVisible?: boolean;
   db: Database;
 }) {
+  // Tag names are hierarchy paths, they are canonicalized so that `LA / School` and `LA/School`
+  // are the same tag
+  const formattedName = isDefined(name) ? formatTagName({ name }) : undefined;
+
   const [result, error] = await safely(
     db
       .update(tagsTable)
       .set(
         omitUndefined({
-          name,
+          name: formattedName,
           description,
           color,
-          normalizedName: isDefined(name) ? normalizeTagName({ name }) : undefined,
+          isVisible,
+          normalizedName: isDefined(formattedName)
+            ? normalizeTagName({ name: formattedName })
+            : undefined,
         }),
       )
       .where(and(eq(tagsTable.id, tagId), eq(tagsTable.organizationId, organizationId)))

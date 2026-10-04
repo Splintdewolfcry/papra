@@ -21,6 +21,7 @@ export type PapraTag = {
   name: string;
   color: string;
   description?: string;
+  isVisible?: boolean;
   organizationId: string;
   createdAt: string;
   updatedAt: string;

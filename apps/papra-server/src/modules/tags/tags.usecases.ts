@@ -30,6 +30,7 @@ export async function createTag({
   name,
   color,
   description,
+  isVisible,
   config,
   tagsRepository,
 }: {
@@ -37,13 +38,14 @@ export async function createTag({
   name: string;
   color: string;
   description?: string;
+  isVisible?: boolean;
   config: Config;
   tagsRepository: TagsRepository;
 }) {
   await checkIfOrganizationCanCreateNewTag({ organizationId, config, tagsRepository });
 
   const { tag } = await tagsRepository.createTag({
-    tag: { organizationId, name, color, description },
+    tag: { organizationId, name, color, description, isVisible },
   });
 
   return { tag };

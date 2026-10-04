@@ -524,6 +524,7 @@ const inMemoryApiMock: Record<string, { handler: any }> = {
         name,
         color: get(body, ['color']) as string,
         description: (get(body, ['description']) ?? null) as string | null,
+        isVisible: (get(body, ['isVisible']) ?? true) as boolean,
         createdAt: new Date(),
         updatedAt: new Date(),
       };

@@ -113,6 +113,7 @@ export async function seedDemoStorage() {
     name: tag.name,
     color: tag.color,
     description: tag.description,
+    isVisible: true,
     createdAt: lastMonth,
     updatedAt: lastMonth,
   }));

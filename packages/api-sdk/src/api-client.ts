@@ -97,17 +97,19 @@ async function createTag({
   name,
   color,
   description,
+  isVisible,
   apiClient,
 }: {
   organizationId: string;
   name: string;
   color: string;
   description?: string;
+  isVisible?: boolean;
   apiClient: ApiClient;
 }) {
   return await apiClient<{ tag: PapraTag }>(`/api/organizations/${organizationId}/tags`, {
     method: 'POST',
-    body: { name, color, description },
+    body: { name, color, description, isVisible },
   });
 }
 

@@ -1,17 +1,13 @@
 import type { DialogTriggerProps } from '@kobalte/core/dialog';
 import type { Component, JSX, ValidComponent } from 'solid-js';
+import type { TagHierarchySort } from '../tags.models';
 import type { Tag as TagType } from '../tags.types';
 import { safely } from '@corentinth/chisels';
 import { getValues, setValue } from '@modular-forms/solid';
 import { A, useParams } from '@solidjs/router';
 import { useMutation, useQuery } from '@tanstack/solid-query';
-import {
-  createSolidTable,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-} from '@tanstack/solid-table';
-import { createSignal, For, Show, Suspense } from 'solid-js';
+import { createSolidTable, flexRender, getCoreRowModel } from '@tanstack/solid-table';
+import { createMemo, createSignal, For, Show, Suspense } from 'solid-js';
 import * as v from 'valibot';
 import { makeDocumentSearchPermalink } from '@/modules/documents/document.models';
 import { RelativeTime } from '@/modules/i18n/components/RelativeTime';
@@ -21,6 +17,7 @@ import { createForm } from '@/modules/shared/form/form';
 import { makeReturnVoidAsync } from '@/modules/shared/functions/void';
 import { useI18nApiErrors } from '@/modules/shared/http/composables/i18n-api-errors';
 import { queryClient } from '@/modules/shared/query/query-client';
+import { cn } from '@/modules/shared/style/cn';
 import { Button } from '@/modules/ui/components/button';
 import { ColorSwatchPicker } from '@/modules/ui/components/color-swatch-picker';
 import {
@@ -33,6 +30,13 @@ import {
 import { EmptyState } from '@/modules/ui/components/empty';
 import { createToast } from '@/modules/ui/components/sonner';
 import {
+  Switch,
+  SwitchControl,
+  SwitchDescription,
+  SwitchLabel,
+  SwitchThumb,
+} from '@/modules/ui/components/switch';
+import {
   Table,
   TableBody,
   TableCell,
@@ -43,6 +47,15 @@ import {
 import { TextArea } from '@/modules/ui/components/textarea';
 import { TextField, TextFieldLabel, TextFieldRoot } from '@/modules/ui/components/textfield';
 import { Tag as TagComponent, TagLink } from '../components/tag.component';
+import {
+  buildTagsHierarchy,
+  createTagHierarchyComparator,
+  flattenTagsHierarchy,
+  formatTagName,
+  isTagVisible,
+  isValidTagName,
+  maxTagHierarchyDepth,
+} from '../tags.models';
 import { createTag, deleteTag, fetchTags, updateTag } from '../tags.services';
 
 // To keep, useful for generating swatches
@@ -76,9 +89,21 @@ const TagColorPicker: Component<{
   return <ColorSwatchPicker value={props.color} onChange={props.onChange} colors={defaultColors} />;
 };
 
+export type TagFormValues = {
+  name: string;
+  color: string;
+  description: string;
+  isVisible: boolean;
+};
+
 const TagForm: Component<{
-  onSubmit: (values: { name: string; color: string; description: string }) => unknown;
-  initialValues?: { name?: string; color?: string; description?: string | null };
+  onSubmit: (values: TagFormValues) => unknown;
+  initialValues?: {
+    name?: string;
+    color?: string;
+    description?: string | null;
+    isVisible?: boolean;
+  };
   submitButton: JSX.Element;
 }> = (props) => {
   const { t } = useI18n();
@@ -90,6 +115,10 @@ const TagForm: Component<{
         v.trim(),
         v.nonEmpty(t('tags.form.name.required')),
         v.maxLength(64, t('tags.form.name.max-length')),
+        v.check(
+          (name) => isValidTagName({ name: formatTagName({ name }) }),
+          t('tags.form.name.invalid-hierarchy', { maxDepth: maxTagHierarchyDepth }),
+        ),
       ),
       color: v.pipe(
         v.string(),
@@ -102,10 +131,13 @@ const TagForm: Component<{
         v.trim(),
         v.maxLength(256, t('tags.form.description.max-length')),
       ),
+      isVisible: v.boolean(),
     }),
     initialValues: {
-      ...props.initialValues,
+      name: props.initialValues?.name,
+      color: props.initialValues?.color,
       description: props.initialValues?.description ?? undefined,
+      isVisible: props.initialValues?.isVisible ?? true,
     },
   });
 
@@ -126,6 +158,7 @@ const TagForm: Component<{
               aria-invalid={Boolean(field.error)}
               placeholder={t('tags.form.name.placeholder')}
             />
+            <div class="text-muted-foreground text-xs">{t('tags.form.name.hierarchy-hint')}</div>
             {field.error && <div class="text-red-500 text-sm">{field.error}</div>}
           </TextFieldRoot>
         )}
@@ -156,7 +189,6 @@ const TagForm: Component<{
             <TextArea
               id="description"
               {...inputProps}
-              autoFocus
               value={field.value}
               aria-invalid={Boolean(field.error)}
               placeholder={t('tags.form.description.placeholder')}
@@ -166,10 +198,35 @@ const TagForm: Component<{
         )}
       </Field>
 
+      <Field name="isVisible" type="boolean">
+        {(field) => (
+          <Switch
+            class="flex items-center justify-between gap-4 mb-2"
+            checked={field.value ?? true}
+            onChange={(isVisible) => setValue(form, 'isVisible', isVisible)}
+          >
+            <div class="flex flex-col gap-0.5">
+              <SwitchLabel class="text-sm font-medium">
+                {t('tags.form.visibility.label')}
+              </SwitchLabel>
+              <SwitchDescription class="text-muted-foreground text-xs">
+                {t('tags.form.visibility.description')}
+              </SwitchDescription>
+            </div>
+
+            <SwitchControl>
+              <SwitchThumb />
+            </SwitchControl>
+          </Switch>
+        )}
+      </Field>
+
       <div class="flex flex-row-reverse justify-between items-center mt-6">
         {props.submitButton}
 
-        {getFormValues().name && <TagComponent {...getFormValues()} />}
+        <Show when={getFormValues().name}>
+          <TagComponent name={getFormValues().name} color={getFormValues().color} />
+        </Show>
       </div>
     </Form>
   );
@@ -197,11 +254,12 @@ export const CreateTagModal: Component<{
   };
 
   const createTagMutation = useMutation(() => ({
-    mutationFn: async (data: { name: string; color: string; description: string }) =>
+    mutationFn: async (data: TagFormValues) =>
       createTag({
         name: data.name,
         color: data.color.toLowerCase(),
         description: data.description,
+        isVisible: data.isVisible,
         organizationId: props.organizationId,
       }),
     onSuccess: async ({ tag }, variables) => {
@@ -262,11 +320,12 @@ const UpdateTagModal: Component<{
   const { getErrorMessage } = useI18nApiErrors({ t });
 
   const updateTagMutation = useMutation(() => ({
-    mutationFn: async (data: { name: string; color: string; description: string }) =>
+    mutationFn: async (data: TagFormValues) =>
       updateTag({
         name: data.name,
         color: data.color.toLowerCase(),
         description: data.description,
+        isVisible: data.isVisible,
         organizationId: props.organizationId,
         tagId: props.tag.id,
       }),
@@ -317,6 +376,22 @@ const UpdateTagModal: Component<{
   );
 };
 
+/**
+ * A row of the tags table, either a tag or a group of tags coming from the hierarchy
+ * (eg the `LA` group of the `LA/School` tag).
+ */
+type TagTableRow = {
+  path: string;
+  name: string;
+  depth: number;
+  hasChildren: boolean;
+  isExpanded: boolean;
+  tag?: TagType;
+  description: string | null;
+  documentsCount: number;
+  createdAt?: Date;
+};
+
 export const TagsPage: Component = () => {
   const params = useParams();
   const { confirm } = useConfirmModal();
@@ -326,6 +401,89 @@ export const TagsPage: Component = () => {
   const query = useQuery(() => ({
     queryKey: ['organizations', params.organizationId, 'tags'],
     queryFn: async () => fetchTags({ organizationId: params.organizationId }),
+  }));
+
+  const [getCollapsedPaths, setCollapsedPaths] = createSignal<Set<string>>(new Set());
+  const [getSorting, setSorting] = createSignal<{ id: TagHierarchySort['key']; desc: boolean }>({
+    id: 'name',
+    desc: false,
+  });
+
+  const getIsPathExpanded = (path: string) => !getCollapsedPaths().has(path.toLowerCase());
+
+  const togglePath = ({ path }: { path: string }) => {
+    const normalizedPath = path.toLowerCase();
+
+    setCollapsedPaths((collapsedPaths) => {
+      const nextCollapsedPaths = new Set(collapsedPaths);
+
+      if (nextCollapsedPaths.has(normalizedPath)) {
+        nextCollapsedPaths.delete(normalizedPath);
+      } else {
+        nextCollapsedPaths.add(normalizedPath);
+      }
+
+      return nextCollapsedPaths;
+    });
+  };
+
+  const getRows = createMemo<TagTableRow[]>(() => {
+    const nodes = buildTagsHierarchy({ tags: query.data?.tags ?? [] });
+    const sorting = getSorting();
+
+    const rows = flattenTagsHierarchy({
+      nodes,
+      compare: createTagHierarchyComparator({
+        sort: { key: sorting.id, direction: sorting.desc ? 'desc' : 'asc' },
+      }),
+      isExpanded: ({ node }) => getIsPathExpanded(node.path),
+    });
+
+    return rows.map(({ node, depth, hasChildren, isExpanded, documentsCount }) => ({
+      path: node.path,
+      name: node.name,
+      depth,
+      hasChildren,
+      isExpanded,
+      tag: node.tag,
+      description: node.tag?.description ?? null,
+      documentsCount,
+      createdAt: node.tag?.createdAt,
+    }));
+  });
+
+  const getTableSortingState = () => [{ id: getSorting().id, desc: getSorting().desc }];
+
+  const updateTagVisibilityMutation = useMutation(() => ({
+    mutationFn: async ({ tagId, isVisible }: { tagId: string; isVisible: boolean }) =>
+      updateTag({ organizationId: params.organizationId, tagId, isVisible }),
+    onSuccess: async ({ tag }) => {
+      queryClient.setQueryData<{ tags: TagType[] }>(
+        ['organizations', params.organizationId, 'tags'],
+        (data) =>
+          data
+            ? {
+                ...data,
+                tags: data.tags.map((existingTag) =>
+                  existingTag.id === tag.id ? tag : existingTag,
+                ),
+              }
+            : data,
+      );
+
+      createToast({
+        message: isTagVisible({ tag })
+          ? t('tags.visibility.shown', { name: tag.name })
+          : t('tags.visibility.hidden', { name: tag.name }),
+        type: 'success',
+      });
+    },
+    onError: (error) => {
+      createToast({
+        message: getErrorMessage({ error }),
+        type: 'error',
+      });
+    },
   }));
 
   const del = async ({ tag }: { tag: TagType }) => {
@@ -373,16 +531,92 @@ export const TagsPage: Component = () => {
     });
   };
 
-  const table = createSolidTable({
+  const table = createSolidTable<TagTableRow>({
     get data() {
-      return query.data?.tags ?? [];
+      return getRows();
+    },
+    // Sorting is handled by the hierarchy flattening so that tags stay grouped with their parents
+    manualSorting: true,
+    state: {
+      get sorting() {
+        return getTableSortingState();
+      },
+    },
+    onSortingChange: (updaterOrValue) => {
+      const sorting =
+        typeof updaterOrValue === 'function'
+          ? updaterOrValue(getTableSortingState())
+          : updaterOrValue;
+
+      const [firstSorting] = sorting;
+
+      setSorting({
+        id: (firstSorting?.id ?? 'name') as TagHierarchySort['key'],
+        desc: firstSorting?.desc ?? false,
+      });
     },
     columns: [
       {
         header: () => t('tags.table.headers.tag'),
         accessorKey: 'name',
         sortingFn: 'alphanumeric',
-        cell: (data) => <TagLink {...data.row.original} />,
+        cell: ({ row }) => {
+          const tagRow = row.original;
+
+          return (
+            <div
+              class="flex items-center gap-1"
+              style={{ 'padding-left': `${tagRow.depth * 16}px` }}
+            >
+              <Show when={tagRow.hasChildren} fallback={<div class="size-4 flex-shrink-0" />}>
+                <button
+                  type="button"
+                  class="size-4 flex items-center justify-center cursor-pointer text-muted-foreground hover:text-foreground flex-shrink-0"
+                  aria-label={tagRow.isExpanded ? t('tags.table.collapse') : t('tags.table.expand')}
+                  onClick={() => togglePath({ path: tagRow.path })}
+                >
+                  <div
+                    class={cn(
+                      'size-3.5',
+                      tagRow.isExpanded ? 'i-tabler-chevron-down' : 'i-tabler-chevron-right',
+                    )}
+                  />
+                </button>
+              </Show>
+
+              <Show
+                when={tagRow.tag}
+                fallback={
+                  <span class="text-muted-foreground inline-flex items-center gap-1.5 text-sm">
+                    <div class="i-tabler-folder size-4" />
+                    {tagRow.name}
+                  </span>
+                }
+              >
+                {(getTag) => (
+                  <span class="inline-flex items-center gap-1.5">
+                    <TagLink
+                      id={getTag().id}
+                      name={tagRow.name}
+                      color={getTag().color}
+                      description={getTag().description}
+                      organizationId={params.organizationId}
+                      class={cn(!isTagVisible({ tag: getTag() }) && 'text-muted-foreground')}
+                      title={getTag().name}
+                    />
+
+                    <Show when={!isTagVisible({ tag: getTag() })}>
+                      <div
+                        class="i-tabler-eye-off size-3.5 text-muted-foreground"
+                        title={t('tags.visibility.hidden-tag')}
+                      />
+                    </Show>
+                  </span>
+                )}
+              </Show>
+            </div>
+          );
+        },
       },
       {
         header: () => t('tags.table.headers.description'),
@@ -400,56 +634,113 @@ export const TagsPage: Component = () => {
         header: () => t('tags.table.headers.documents'),
         accessorKey: 'documentsCount',
         sortingFn: 'basic',
-        cell: (data) => (
-          <A
-            href={makeDocumentSearchPermalink({
-              organizationId: params.organizationId,
-              search: { tags: [data.row.original] },
-            })}
-            class="inline-flex items-center gap-1 hover:underline"
-          >
-            <div class="i-tabler-file-text size-5 text-muted-foreground" />
-            {data.getValue<number>()}
-          </A>
-        ),
+        cell: ({ row }) => {
+          const tagRow = row.original;
+
+          return (
+            <Show
+              when={tagRow.tag}
+              fallback={
+                <span class="inline-flex items-center gap-1 text-muted-foreground">
+                  <div class="i-tabler-file-text size-5" />
+                  {tagRow.documentsCount}
+                </span>
+              }
+            >
+              {(getTag) => (
+                <A
+                  href={makeDocumentSearchPermalink({
+                    organizationId: params.organizationId,
+                    search: { tags: [getTag()] },
+                  })}
+                  class="inline-flex items-center gap-1 hover:underline"
+                >
+                  <div class="i-tabler-file-text size-5 text-muted-foreground" />
+                  {tagRow.documentsCount}
+                </A>
+              )}
+            </Show>
+          );
+        },
       },
       {
         header: () => t('tags.table.headers.created'),
         accessorKey: 'createdAt',
         sortingFn: 'datetime',
-        cell: (data) => <RelativeTime date={data.getValue<Date>()} class="text-muted-foreground" />,
+        cell: ({ row }) => (
+          <Show when={row.original.createdAt}>
+            {(getCreatedAt) => <RelativeTime date={getCreatedAt()} class="text-muted-foreground" />}
+          </Show>
+        ),
       },
       {
         id: 'actions',
         header: () => <div class="text-right">{t('tags.table.headers.actions')}</div>,
         enableSorting: false,
-        cell: (data) => (
-          <div class="flex gap-2 justify-end">
-            <UpdateTagModal organizationId={params.organizationId} tag={data.row.original}>
-              {(props) => (
-                <Button size="icon" variant="outline" class="size-7" {...props}>
-                  <div class="i-tabler-edit size-4" />
-                </Button>
-              )}
-            </UpdateTagModal>
+        cell: ({ row }) => {
+          const tagRow = row.original;
 
-            <Button
-              size="icon"
-              variant="outline"
-              class="size-7 text-red"
-              onClick={async () => del({ tag: data.row.original })}
-            >
-              <div class="i-tabler-trash size-4" />
-            </Button>
-          </div>
-        ),
+          return (
+            <Show when={tagRow.tag}>
+              {(getTag) => (
+                <div class="flex gap-2 justify-end">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    class="size-7"
+                    title={
+                      isTagVisible({ tag: getTag() })
+                        ? t('tags.visibility.hide-tooltip')
+                        : t('tags.visibility.show-tooltip')
+                    }
+                    aria-label={
+                      isTagVisible({ tag: getTag() })
+                        ? t('tags.visibility.hide-tooltip')
+                        : t('tags.visibility.show-tooltip')
+                    }
+                    isLoading={
+                      updateTagVisibilityMutation.isPending &&
+                      updateTagVisibilityMutation.variables?.tagId === getTag().id
+                    }
+                    onClick={() =>
+                      updateTagVisibilityMutation.mutate({
+                        tagId: getTag().id,
+                        isVisible: !isTagVisible({ tag: getTag() }),
+                      })
+                    }
+                  >
+                    <div
+                      class={cn(
+                        'size-4',
+                        isTagVisible({ tag: getTag() }) ? 'i-tabler-eye' : 'i-tabler-eye-off',
+                      )}
+                    />
+                  </Button>
+
+                  <UpdateTagModal organizationId={params.organizationId} tag={getTag()}>
+                    {(props) => (
+                      <Button size="icon" variant="outline" class="size-7" {...props}>
+                        <div class="i-tabler-edit size-4" />
+                      </Button>
+                    )}
+                  </UpdateTagModal>
+
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    class="size-7 text-red"
+                    onClick={async () => del({ tag: getTag() })}
+                  >
+                    <div class="i-tabler-trash size-4" />
+                  </Button>
+                </div>
+              )}
+            </Show>
+          );
+        },
       },
     ],
-    initialState: {
-      sorting: [{ id: 'name', desc: false }],
-    },
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
   });
 
   return (

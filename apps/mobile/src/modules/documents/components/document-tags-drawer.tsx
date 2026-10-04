@@ -81,6 +81,8 @@ export function DocumentTagsDrawerContent({
   const tags = tagsQuery.data?.tags ?? [];
   const searchText = search.trim().toLocaleLowerCase();
   const filteredTags = tags
+    // Hidden tags are not suggested, unless they are already attached to the document
+    .filter((tag) => tag.isVisible !== false || selectedIds.has(tag.id))
     .filter(({ name }) => name.toLocaleLowerCase().includes(searchText))
     .sort((a, b) => a.name.localeCompare(b.name));
   const isLoading = documentQuery.isPending || tagsQuery.isPending;

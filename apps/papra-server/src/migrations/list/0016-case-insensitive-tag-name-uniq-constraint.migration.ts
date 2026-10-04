@@ -66,7 +66,13 @@ export const caseInsensitiveTagNameUniqConstraintMigration = {
         batchSize: 200,
         getBatch: async ({ limit }) =>
           db
-            .select()
+            // Only select the columns that exist at this point of the migration chain, columns
+            // added by later migrations (eg tags.is_visible) are not available yet
+            .select({
+              id: tagsTable.id,
+              name: tagsTable.name,
+              organizationId: tagsTable.organizationId,
+            })
             .from(tagsTable)
             .where(isNull(tagsTable.normalizedName))
             .orderBy(asc(tagsTable.id))

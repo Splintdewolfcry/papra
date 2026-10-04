@@ -242,6 +242,7 @@ describe('tags repository', () => {
           normalizedName: 'tag 3',
           description: null,
           color: '#0000aa',
+          isVisible: true,
           documentsCount: 0,
           createdAt: new Date('2021-01-03'),
           updatedAt: new Date('2021-01-03'),
@@ -253,6 +254,7 @@ describe('tags repository', () => {
           normalizedName: 'tag 2',
           description: null,
           color: '#00aa00',
+          isVisible: true,
           documentsCount: 1,
           createdAt: new Date('2021-01-02'),
           updatedAt: new Date('2021-01-02'),
@@ -264,6 +266,7 @@ describe('tags repository', () => {
           normalizedName: 'tag 1',
           description: null,
           color: '#aa0000',
+          isVisible: true,
           documentsCount: 1,
           createdAt: new Date('2021-01-01'),
           updatedAt: new Date('2021-01-01'),
@@ -350,6 +353,54 @@ describe('tags repository', () => {
 
       expect(tags).to.have.length(1);
       expect(tags[0]?.normalizedName).to.equal('tag 1');
+    });
+
+    test('when creating a tag, it is visible by default', async () => {
+      const { db } = await createInMemoryDatabase({
+        organizations: [{ id: 'organization-1', name: 'Organization 1' }],
+      });
+
+      const tagsRepository = createTagsRepository({ db });
+
+      const { tag } = await tagsRepository.createTag({
+        tag: { organizationId: 'organization-1', name: 'Tag 1', color: '#aa0000' },
+      });
+
+      expect(tag?.isVisible).to.equal(true);
+    });
+
+    test('a tag can be created as hidden', async () => {
+      const { db } = await createInMemoryDatabase({
+        organizations: [{ id: 'organization-1', name: 'Organization 1' }],
+      });
+
+      const tagsRepository = createTagsRepository({ db });
+
+      const { tag } = await tagsRepository.createTag({
+        tag: {
+          organizationId: 'organization-1',
+          name: 'Tag 1',
+          color: '#aa0000',
+          isVisible: false,
+        },
+      });
+
+      expect(tag?.isVisible).to.equal(false);
+    });
+
+    test('when creating a tag, the hierarchy path is formatted and normalized', async () => {
+      const { db } = await createInMemoryDatabase({
+        organizations: [{ id: 'organization-1', name: 'Organization 1' }],
+      });
+
+      const tagsRepository = createTagsRepository({ db });
+
+      const { tag } = await tagsRepository.createTag({
+        tag: { organizationId: 'organization-1', name: ' LA / School ', color: '#aa0000' },
+      });
+
+      expect(tag?.name).to.equal('LA/School');
+      expect(tag?.normalizedName).to.equal('la/school');
     });
   });
 
@@ -447,6 +498,70 @@ describe('tags repository', () => {
 
       expect(tags).to.have.length(1);
       expect(tags[0]?.normalizedName).to.equal('new tag name');
+    });
+
+    test('the visibility of a tag can be toggled without touching its other attributes', async () => {
+      const { db } = await createInMemoryDatabase({
+        organizations: [{ id: 'organization-1', name: 'Organization 1' }],
+        tags: [
+          {
+            id: 'tag-1',
+            organizationId: 'organization-1',
+            name: 'Tag 1',
+            normalizedName: 'tag 1',
+            color: '#aa0000',
+            description: 'Tag 1 description',
+          },
+        ],
+      });
+
+      const tagsRepository = createTagsRepository({ db });
+
+      const { tag: hiddenTag } = await tagsRepository.updateTag({
+        tagId: 'tag-1',
+        organizationId: 'organization-1',
+        isVisible: false,
+      });
+
+      expect(hiddenTag).to.include({
+        name: 'Tag 1',
+        description: 'Tag 1 description',
+        color: '#aa0000',
+        isVisible: false,
+      });
+
+      const { tag: visibleTag } = await tagsRepository.updateTag({
+        tagId: 'tag-1',
+        organizationId: 'organization-1',
+        isVisible: true,
+      });
+
+      expect(visibleTag?.isVisible).to.equal(true);
+    });
+
+    test('when moving a tag in the hierarchy, its normalized name is updated', async () => {
+      const { db } = await createInMemoryDatabase({
+        organizations: [{ id: 'organization-1', name: 'Organization 1' }],
+        tags: [
+          {
+            id: 'tag-1',
+            organizationId: 'organization-1',
+            name: 'School',
+            normalizedName: 'school',
+            color: '#aa0000',
+          },
+        ],
+      });
+
+      const tagsRepository = createTagsRepository({ db });
+
+      const { tag } = await tagsRepository.updateTag({
+        tagId: 'tag-1',
+        organizationId: 'organization-1',
+        name: 'LA/School',
+      });
+
+      expect(tag).to.include({ name: 'LA/School', normalizedName: 'la/school' });
     });
   });
 });

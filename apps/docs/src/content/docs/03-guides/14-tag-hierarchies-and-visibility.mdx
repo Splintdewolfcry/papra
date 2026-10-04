@@ -1,0 +1,47 @@
+---
+title: Tag Hierarchies and Visibility
+description: Organize tags in nested hierarchies and hide the ones you don't want suggested everywhere.
+slug: guides/tag-hierarchies-and-visibility
+---
+
+## Tag hierarchies
+
+Tags can be nested using the `/` separator in their name. `LA/School` is the `School` tag, nested
+under the `LA` group:
+
+```txt
+LA
+├── School
+│   └── Class
+└── Work
+```
+
+- Hierarchies are created by naming: create a tag named `LA/School` and it shows up under `LA`
+  everywhere tags are listed (tags settings page, tag pickers).
+- Intermediate levels don't need to exist as tags, `LA` is displayed as a group even if you never
+  created a tag named `LA`. Creating it is still useful to attach documents to the parent level.
+- Up to 5 levels can be nested.
+- Renaming a tag moves it in the hierarchy, renaming `LA/School` to `NY/School` moves it under `NY`.
+
+In the tag pickers, only the last level of the hierarchy is displayed (`School`) since the group it
+belongs to (`LA`) is already displayed above it. When filtering, the whole path is matched so typing
+`LA` or `School` both find `LA/School`.
+
+## Tag visibility
+
+Every tag is visible by default. A hidden tag is not suggested in the tag pickers anymore, which is
+useful for tags maintained by tagging rules or by document auto tagging that you don't want to see
+in your day to day tagging flows.
+
+Hidden tags:
+
+- are not suggested in tag pickers, unless they are already attached to the document you are editing
+  (so you can still remove them);
+- are still attached to documents, applied by tagging rules and returned by the API;
+- are displayed in a lighter color in the tags settings page, where their visibility can be toggled
+  with the eye icon;
+- can also be toggled directly from a tag picker using the eye icon displayed on hover.
+
+Visibility is set when creating a tag (the `Visible` switch of the creation form, also available when
+creating a tag on the fly while uploading a document) and can be changed at any time from the tags
+settings page or from the API using the `isVisible` field.

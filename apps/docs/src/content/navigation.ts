@@ -77,6 +77,11 @@ export const sidebar = [
         label: 'Document Auto Tagging',
         slug: 'guides/auto-tagging',
       },
+      {
+        label: 'Tag Hierarchies and Visibility',
+        slug: 'guides/tag-hierarchies-and-visibility',
+        badge: { text: 'new', variant: 'note' },
+      },
     ],
   },
   {

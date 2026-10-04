@@ -1,12 +1,17 @@
 import type { Component } from 'solid-js';
 import type { HighlightedItem, TagPickerListItem } from './use-tag-picker.hook';
 import { For, Match, Switch } from 'solid-js';
-import { TagPickerItemCreateNewTag, TagPickerItemTag } from './tag-picker-item.component';
+import {
+  TagPickerItemCreateNewTag,
+  TagPickerItemGroup,
+  TagPickerItemTag,
+} from './tag-picker-item.component';
 
 export type TagPickerListProps = {
   listItems: TagPickerListItem[];
   highlighted: HighlightedItem;
   onToggle: (tagId: string, selected: boolean) => void;
+  onToggleVisibility?: (tagId: string, isVisible: boolean) => void;
   onCreateNewTag?: () => void;
 };
 
@@ -20,10 +25,23 @@ export const TagPickerList: Component<TagPickerListProps> = (props) => {
               {(getTagItem) => (
                 <TagPickerItemTag
                   tag={getTagItem().tag}
+                  displayName={getTagItem().displayName}
+                  depth={getTagItem().depth}
                   selected={getTagItem().isSelected}
                   highlighted={props.highlighted.tagId === getTagItem().tag.id}
                   onToggle={(selected) => props.onToggle(getTagItem().tag.id, selected)}
+                  onToggleVisibility={
+                    props.onToggleVisibility
+                      ? (isVisible) => props.onToggleVisibility?.(getTagItem().tag.id, isVisible)
+                      : undefined
+                  }
                 />
+              )}
+            </Match>
+
+            <Match when={baseItem.type === 'tag-group' ? baseItem : null}>
+              {(getGroupItem) => (
+                <TagPickerItemGroup name={getGroupItem().name} depth={getGroupItem().depth} />
               )}
             </Match>
 

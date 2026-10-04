@@ -1,16 +1,18 @@
 import type { PopoverTriggerProps } from '@kobalte/core/popover';
 import type { Component, ComponentProps } from 'solid-js';
 import type { Tag } from '../tags.types';
-import { useQuery } from '@tanstack/solid-query';
+import { useMutation, useQuery } from '@tanstack/solid-query';
 import { createEffect, createSignal, For, splitProps, Suspense } from 'solid-js';
 import { useI18n } from '@/modules/i18n/i18n.provider';
+import { useI18nApiErrors } from '@/modules/shared/http/composables/i18n-api-errors';
 import { queryClient } from '@/modules/shared/query/query-client';
 import { cn } from '@/modules/shared/style/cn';
 import { Button } from '@/modules/ui/components/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/modules/ui/components/popover';
+import { createToast } from '@/modules/ui/components/sonner';
 import { TextField, TextFieldRoot } from '@/modules/ui/components/textfield';
 import { CreateTagModal } from '../pages/tags.page';
-import { addTagToDocument, fetchTags, removeTagFromDocument } from '../tags.services';
+import { addTagToDocument, fetchTags, removeTagFromDocument, updateTag } from '../tags.services';
 import { TagPickerList } from './tag-picker-list.component';
 import { Tag as TagComponent, TagLink } from './tag.component';
 import { useTagPicker } from './use-tag-picker.hook';
@@ -52,10 +54,45 @@ const TagPicker: Component<{
   organizationId: string;
   isOpen?: boolean;
 }> = (props) => {
+  const { t } = useI18n();
+  const { getErrorMessage } = useI18nApiErrors({ t });
   const [getIsTagCreationModalOpen, setIsTagCreationModalOpen] = createSignal(false);
   const tagsQuery = useQuery(() => ({
     queryKey: ['organizations', props.organizationId, 'tags'],
     queryFn: async () => fetchTags({ organizationId: props.organizationId }),
+  }));
+
+  const getTagsQueryKey = () => ['organizations', props.organizationId, 'tags'];
+
+  const updateTagVisibilityMutation = useMutation(() => ({
+    mutationFn: async ({ tagId, isVisible }: { tagId: string; isVisible: boolean }) =>
+      updateTag({ organizationId: props.organizationId, tagId, isVisible }),
+    onMutate: async ({ tagId, isVisible }) => {
+      await queryClient.cancelQueries({ queryKey: getTagsQueryKey() });
+
+      const previousTags = queryClient.getQueryData<{ tags: Tag[] }>(getTagsQueryKey());
+
+      queryClient.setQueryData<{ tags: Tag[] }>(getTagsQueryKey(), (data) =>
+        data
+          ? {
+              ...data,
+              tags: data.tags.map((tag) => (tag.id === tagId ? { ...tag, isVisible } : tag)),
+            }
+          : data,
+      );
+
+      return { previousTags };
+    },
+    onError: (error, _variables, context) => {
+      if (context?.previousTags) {
+        queryClient.setQueryData(getTagsQueryKey(), context.previousTags);
+      }
+
+      createToast({ message: getErrorMessage({ error }), type: 'error' });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: getTagsQueryKey() });
+    },
   }));
 
   const {
@@ -160,6 +197,9 @@ const TagPicker: Component<{
         listItems={getListItems()}
         highlighted={highlighted()}
         onToggle={handleToggle}
+        onToggleVisibility={(tagId, isVisible) =>
+          updateTagVisibilityMutation.mutate({ tagId, isVisible })
+        }
         onCreateNewTag={() => setIsTagCreationModalOpen(true)}
       />
 

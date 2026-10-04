@@ -1,6 +1,7 @@
 import * as v from 'valibot';
 import { describe, expect, test } from 'vitest';
-import { tagColorSchema } from './tags.schemas';
+import { maxTagHierarchyDepth } from './tags.models';
+import { tagColorSchema, tagIsVisibleSchema, tagNameSchema } from './tags.schemas';
 
 describe('tags schemas', () => {
   describe('tagColorSchema', () => {
@@ -21,6 +22,39 @@ describe('tags schemas', () => {
       expect(v.parse(tagColorSchema, '#abcdef')).toBe('#ABCDEF');
       expect(v.parse(tagColorSchema, '#abCdEf')).toBe('#ABCDEF');
       expect(v.parse(tagColorSchema, '#123abc')).toBe('#123ABC');
+    });
+  });
+
+  describe('tagNameSchema', () => {
+    test('tag names can express a hierarchy with the "/" separator', () => {
+      expect(v.parse(tagNameSchema, 'School')).toBe('School');
+      expect(v.parse(tagNameSchema, 'LA/School')).toBe('LA/School');
+    });
+
+    test('hierarchy levels are trimmed and empty levels are removed', () => {
+      expect(v.parse(tagNameSchema, ' LA / School ')).toBe('LA/School');
+      expect(v.parse(tagNameSchema, 'LA//School')).toBe('LA/School');
+      expect(v.parse(tagNameSchema, '/LA/School/')).toBe('LA/School');
+    });
+
+    test('empty names and too deep hierarchies are rejected', () => {
+      expect(() => v.parse(tagNameSchema, '')).toThrow();
+      expect(() => v.parse(tagNameSchema, '  /  ')).toThrow();
+      expect(() =>
+        v.parse(
+          tagNameSchema,
+          Array.from({ length: maxTagHierarchyDepth + 1 }, (_, i) => `l${i}`).join('/'),
+        ),
+      ).toThrow();
+    });
+  });
+
+  describe('tagIsVisibleSchema', () => {
+    test('the visibility of a tag is a boolean', () => {
+      expect(v.parse(tagIsVisibleSchema, true)).toBe(true);
+      expect(v.parse(tagIsVisibleSchema, false)).toBe(false);
+
+      expect(() => v.parse(tagIsVisibleSchema, 'true')).toThrow();
     });
   });
 });

@@ -19,16 +19,18 @@ export async function createTag({
   name,
   color,
   description,
+  isVisible = true,
 }: {
   organizationId: string;
   name: string;
   color: string;
   description: string;
+  isVisible?: boolean;
 }) {
   const { tag } = await apiClient<{ tag: AsDto<Tag> }>({
     path: `/api/organizations/${organizationId}/tags`,
     method: 'POST',
-    body: { name, color, description },
+    body: { name, color, description, isVisible },
   });
 
   return {
@@ -42,17 +44,19 @@ export async function updateTag({
   name,
   color,
   description,
+  isVisible,
 }: {
   organizationId: string;
   tagId: string;
-  name: string;
-  color: string;
-  description: string;
+  name?: string;
+  color?: string;
+  description?: string;
+  isVisible?: boolean;
 }) {
   const { tag } = await apiClient<{ tag: AsDto<Tag> }>({
     path: `/api/organizations/${organizationId}/tags/${tagId}`,
     method: 'PUT',
-    body: { name, color, description },
+    body: { name, color, description, isVisible },
   });
 
   return {

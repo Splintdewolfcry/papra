@@ -11,6 +11,7 @@ import {
   ComboboxTrigger,
 } from '@/modules/ui/components/combobox';
 import { fetchTags } from '../tags.services';
+import { isTagSuggestable } from '../tags.models';
 import { Tag as TagComponent } from './tag.component';
 
 export const DocumentTagPicker: Component<{
@@ -28,7 +29,11 @@ export const DocumentTagPicker: Component<{
     queryFn: async () => fetchTags({ organizationId: props.organizationId }),
   }));
 
-  const options = () => query.data?.tags || [];
+  // Hidden tags are not suggested, unless they are already attached to the documents
+  const options = () =>
+    (query.data?.tags ?? []).filter((tag) =>
+      isTagSuggestable({ tag, selectedTagIds: getSelectedTagIds() }),
+    );
 
   const getSelectedTags = () =>
     query.data?.tags.filter((tag) => getSelectedTagIds().includes(tag.id)) ?? [];

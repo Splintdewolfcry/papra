@@ -1,3 +1,4 @@
+import type { Database } from '../../modules/app/database/database.types';
 import { asc, sql } from 'drizzle-orm';
 import { describe, expect, test } from 'vitest';
 import { setupDatabase } from '../../modules/app/database/database';
@@ -8,6 +9,22 @@ import {
   caseInsensitiveTagNameUniqConstraintMigration,
   createTagNameNormalizer,
 } from './0016-case-insensitive-tag-name-uniq-constraint.migration';
+
+// Those tests run the migration on a legacy schema, columns added by later migrations
+// (eg tags.is_visible) do not exist yet, hence the explicit selection of the legacy columns
+const selectLegacyTags = ({ db }: { db: Database }) =>
+  db
+    .select({
+      id: tagsTable.id,
+      createdAt: tagsTable.createdAt,
+      organizationId: tagsTable.organizationId,
+      name: tagsTable.name,
+      normalizedName: tagsTable.normalizedName,
+      color: tagsTable.color,
+      description: tagsTable.description,
+    })
+    .from(tagsTable)
+    .orderBy(tagsTable.id);
 
 describe('0016-case-insensitive-tag-name-uniq-constraint migration', () => {
   describe('createTagNameNormalizer', () => {
@@ -140,7 +157,7 @@ describe('0016-case-insensitive-tag-name-uniq-constraint migration', () => {
 
       await caseInsensitiveTagNameUniqConstraintMigration.up({ db });
 
-      const tags = await db.select().from(tagsTable).orderBy(tagsTable.id);
+      const tags = await selectLegacyTags({ db });
 
       expect(tags).toHaveLength(6);
 
@@ -215,7 +232,7 @@ describe('0016-case-insensitive-tag-name-uniq-constraint migration', () => {
         VALUES ('tag_3', 1737936000000, 1737936000000, 'org_2', 'TEST', 'test', '#0000ff')
       `);
 
-      const tags = await db.select().from(tagsTable).orderBy(tagsTable.id);
+      const tags = await selectLegacyTags({ db });
       expect(tags).toHaveLength(2);
 
       expect(tags.at(0)).toMatchObject({ id: 'tag_1', name: 'Test', normalizedName: 'test' });
@@ -238,13 +255,13 @@ describe('0016-case-insensitive-tag-name-uniq-constraint migration', () => {
 
       await caseInsensitiveTagNameUniqConstraintMigration.up({ db });
 
-      const tagsAfterFirst = await db.select().from(tagsTable);
+      const tagsAfterFirst = await selectLegacyTags({ db });
       expect(tagsAfterFirst).toHaveLength(1);
       expect(tagsAfterFirst[0]?.normalizedName).to.eql('test');
 
       await caseInsensitiveTagNameUniqConstraintMigration.up({ db });
 
-      const tagsAfterSecond = await db.select().from(tagsTable);
+      const tagsAfterSecond = await selectLegacyTags({ db });
       expect(tagsAfterSecond).toHaveLength(1);
       expect(tagsAfterSecond[0]?.normalizedName).to.eql('test');
     });
@@ -268,9 +285,9 @@ describe('0016-case-insensitive-tag-name-uniq-constraint migration', () => {
 
       await caseInsensitiveTagNameUniqConstraintMigration.up({ db });
 
-      const tags = await db.select().from(tagsTable).orderBy(tagsTable.id);
+      const tags = await selectLegacyTags({ db });
 
-      expect(tags.map(({ updatedAt: _, ...tag }) => tag)).to.eql([
+      expect(tags).to.eql([
         {
           id: 'tag_1',
           createdAt: new Date('2025-01-27'),
@@ -357,7 +374,7 @@ describe('0016-case-insensitive-tag-name-uniq-constraint migration', () => {
         `),
       ]);
 
-      const tags = await db.select().from(tagsTable).orderBy(tagsTable.id);
+      const tags = await selectLegacyTags({ db });
 
       expect(tags).toHaveLength(2);
       expect(tags.at(0)).toMatchObject({ id: 'tag_1', name: 'Tag One', normalizedName: null });
@@ -389,7 +406,7 @@ describe('0016-case-insensitive-tag-name-uniq-constraint migration', () => {
 
       await caseInsensitiveTagNameUniqConstraintMigration.up({ db });
 
-      const tagsAfterMigration = await db.select().from(tagsTable).orderBy(tagsTable.id);
+      const tagsAfterMigration = await selectLegacyTags({ db });
       expect(tagsAfterMigration).toHaveLength(500);
 
       expect(tagsAfterMigration.every((tag) => !isNil(tag.normalizedName))).toBe(true);

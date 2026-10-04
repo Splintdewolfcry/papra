@@ -1,6 +1,12 @@
 import type { Tag } from '../tags.types';
 import { createMemo, createSignal } from 'solid-js';
 import { toArrayIf } from '@/modules/shared/utils/array';
+import {
+  buildTagsHierarchy,
+  createTagHierarchyComparator,
+  flattenTagsHierarchy,
+  isTagSuggestable,
+} from '../tags.models';
 
 export type UseTagPickerOptions = {
   getAvailableTags: () => Tag[];
@@ -16,10 +22,26 @@ export type TagPickerListItemTag = {
   type: 'tag';
   tag: Tag;
   isSelected: boolean;
+  /**
+   * The name to display, the last level of the hierarchy when displayed inside its group, the full
+   * path when the list is filtered.
+   */
+  displayName: string;
+  /**
+   * The nesting level of the tag in the hierarchy, 0 being the root.
+   */
+  depth: number;
+};
+
+export type TagPickerListItemGroup = {
+  type: 'tag-group';
+  name: string;
+  depth: number;
 };
 
 export type TagPickerListItem =
   | TagPickerListItemTag
+  | TagPickerListItemGroup
   | {
       type: 'create-new-tag-button';
       name?: string;
@@ -37,13 +59,21 @@ export function useTagPicker(options: UseTagPickerOptions) {
   const getTrimmedFilterQuery = createMemo(() => filterQuery().trim());
   const getNormalizedFilterQuery = createMemo(() => getTrimmedFilterQuery().toLowerCase());
 
-  const getTagsListItems = createMemo<TagPickerListItemTag[]>(() =>
+  // Hidden tags are not suggested, unless they are already attached to the document
+  const getSuggestableTags = createMemo(() =>
     options
       .getAvailableTags()
+      .filter((tag) => isTagSuggestable({ tag, selectedTagIds: options.getSelectedTagIds() })),
+  );
+
+  const getTagsListItems = createMemo<TagPickerListItemTag[]>(() =>
+    getSuggestableTags()
       .toSorted((a, b) => a.name.localeCompare(b.name))
       .map((tag) => ({
         type: 'tag' as const,
         tag,
+        displayName: tag.name,
+        depth: 0,
         isSelected: options.getSelectedTagIds().includes(tag.id),
         isInitiallySelected: initiallySelectedTagIds.includes(tag.id),
       })),
@@ -55,20 +85,43 @@ export function useTagPicker(options: UseTagPickerOptions) {
     ),
   );
 
-  const isExactMatch = createMemo(() =>
-    getFilteredTagListItems().some(
-      ({ tag }) => tag.name.toLowerCase() === getNormalizedFilterQuery(),
-    ),
-  );
+  /**
+   * When nothing is filtered, tags are displayed grouped by hierarchy, showing only the last level
+   * of each tag name since its parents are displayed above it.
+   */
+  const getHierarchyListItems = createMemo<TagPickerListItem[]>(() => {
+    const nodes = buildTagsHierarchy({ tags: getSuggestableTags() });
 
-  const shouldShowCreateOption = createMemo(() => {
-    if (options.getAvailableTags().length === 0) {
-      return true;
-    }
-    return getNormalizedFilterQuery().length > 0 && !isExactMatch();
+    const rows = flattenTagsHierarchy({
+      nodes,
+      compare: createTagHierarchyComparator({ sort: { key: 'name', direction: 'asc' } }),
+      isExpanded: () => true,
+    });
+
+    return rows.flatMap<TagPickerListItem>(({ node, depth }) => {
+      if (!node.tag) {
+        return [{ type: 'tag-group' as const, name: node.name, depth }];
+      }
+
+      const tag = node.tag;
+
+      return [
+        {
+          type: 'tag' as const,
+          tag,
+          displayName: node.name,
+          depth,
+          isSelected: options.getSelectedTagIds().includes(tag.id),
+        },
+      ];
+    });
   });
 
-  const getListItems = createMemo<TagPickerListItem[]>(() => {
+  /**
+   * When filtering, the whole hierarchy path is matched and displayed as a flat list, initially
+   * selected tags first.
+   */
+  const getFlatListItems = createMemo<TagPickerListItem[]>(() => {
     const tagListItems = getFilteredTagListItems();
     const initiallySelectedTagsItems = tagListItems.filter((item) =>
       initiallySelectedTagIds.includes(item.tag.id),
@@ -84,6 +137,27 @@ export function useTagPicker(options: UseTagPickerOptions) {
       ...initiallySelectedTagsItems,
       ...toArrayIf(showSeparator, { type: 'initially-selected-separator' as const }),
       ...nonInitiallySelectedTagsItems,
+    ];
+  });
+
+  const isExactMatch = createMemo(() =>
+    getFilteredTagListItems().some(
+      ({ tag }) => tag.name.toLowerCase() === getNormalizedFilterQuery(),
+    ),
+  );
+
+  const shouldShowCreateOption = createMemo(() => {
+    if (options.getAvailableTags().length === 0) {
+      return true;
+    }
+    return getNormalizedFilterQuery().length > 0 && !isExactMatch();
+  });
+
+  const getListItems = createMemo<TagPickerListItem[]>(() => {
+    const isFiltering = getNormalizedFilterQuery().length > 0;
+
+    return [
+      ...(isFiltering ? getFlatListItems() : getHierarchyListItems()),
       ...toArrayIf(shouldShowCreateOption(), {
         type: 'create-new-tag-button',
         name: getTrimmedFilterQuery(),
