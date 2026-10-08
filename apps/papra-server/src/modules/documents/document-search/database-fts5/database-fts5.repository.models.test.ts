@@ -17,8 +17,8 @@ describe('database-fts5 repository models', () => {
 
       expect(issues).to.eql([]);
       expect(stringifySqlQuery(searchWhereClause)).to.eql({
-        query: `("documents"."organization_id" = ? and "documents"."is_deleted" = ? and "documents"."id" in (select distinct "document_id" from "documents_fts" where "documents_fts" = ?))`,
-        params: ['org_1', 0, 'organization_id:"org_1" {name content}:"foo"*'],
+        query: `("documents"."organization_id" = ? and "documents"."is_deleted" = ? and "documents"."id" not in (select "documents_tags"."document_id" from "documents_tags" inner join "tags" on "documents_tags"."tag_id" = "tags"."id" where ("tags"."organization_id" = ? and "tags"."is_visible" = ?)) and "documents"."id" in (select distinct "document_id" from "documents_fts" where "documents_fts" = ?))`,
+        params: ['org_1', 0, 'org_1', 0, 'organization_id:"org_1" {name content}:"foo"*'],
       });
     });
 
@@ -32,8 +32,10 @@ describe('database-fts5 repository models', () => {
       expect(issues).to.eql([]);
       expect(stringifySqlQuery(searchWhereClause)).to.eql({
         query:
-          '("documents"."organization_id" = ? and "documents"."is_deleted" = ? and (("documents"."id" in (select distinct "documents_tags"."document_id" from "documents_tags" inner join "tags" on "documents_tags"."tag_id" = "tags"."id" where ("tags"."organization_id" = ? and "tags"."normalized_name" = ?)) or "documents"."id" in (select distinct "documents_tags"."document_id" from "documents_tags" inner join "tags" on "documents_tags"."tag_id" = "tags"."id" where ("tags"."organization_id" = ? and "tags"."normalized_name" = ?))) and not "documents"."id" in (select distinct "document_id" from "documents_fts" where "documents_fts" = ?)))',
+          '("documents"."organization_id" = ? and "documents"."is_deleted" = ? and "documents"."id" not in (select "documents_tags"."document_id" from "documents_tags" inner join "tags" on "documents_tags"."tag_id" = "tags"."id" where ("tags"."organization_id" = ? and "tags"."is_visible" = ?)) and (("documents"."id" in (select distinct "documents_tags"."document_id" from "documents_tags" inner join "tags" on "documents_tags"."tag_id" = "tags"."id" where ("tags"."organization_id" = ? and "tags"."normalized_name" = ?)) or "documents"."id" in (select distinct "documents_tags"."document_id" from "documents_tags" inner join "tags" on "documents_tags"."tag_id" = "tags"."id" where ("tags"."organization_id" = ? and "tags"."normalized_name" = ?))) and not "documents"."id" in (select distinct "document_id" from "documents_fts" where "documents_fts" = ?)))',
         params: [
+          'org_1',
+          0,
           'org_1',
           0,
           'org_1',

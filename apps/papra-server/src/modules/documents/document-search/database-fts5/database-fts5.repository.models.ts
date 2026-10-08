@@ -4,8 +4,9 @@ import type { Database } from '../../../app/database/database.types';
 import type { DocumentSearchSort, DocumentSearchSortField } from '../document-search.constants';
 import type { CustomPropertyDefinition } from './query-builder/query-builder.custom-properties';
 import { parseSearchQuery } from '@papra/search-parser';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, notInArray, sql } from 'drizzle-orm';
 import { documentsTable } from '../../documents.table';
+import { documentsTagsTable, tagsTable } from '../../../tags/tags.table';
 import { buildQueryFromExpression } from './query-builder/query-builder';
 
 export function makeSearchWhereClause({
@@ -35,10 +36,21 @@ export function makeSearchWhereClause({
     customPropertyDefinitionsByKey,
   });
 
+  // Documents tagged with a hidden tag are hidden from the document list for everyone in the
+  // organization. A single hidden tag hides the document, even if it also carries visible tags.
+  const hiddenTaggedDocumentIds = db
+    .select({ documentId: documentsTagsTable.documentId })
+    .from(documentsTagsTable)
+    .innerJoin(tagsTable, eq(documentsTagsTable.tagId, tagsTable.id))
+    .where(
+      and(eq(tagsTable.organizationId, organizationId), eq(tagsTable.isVisible, false)),
+    );
+
   return {
     searchWhereClause: and(
       eq(documentsTable.organizationId, organizationId),
       eq(documentsTable.isDeleted, false),
+      notInArray(documentsTable.id, hiddenTaggedDocumentIds),
       sqlQuery,
     ),
     issues: [...parsedIssues, ...issues],

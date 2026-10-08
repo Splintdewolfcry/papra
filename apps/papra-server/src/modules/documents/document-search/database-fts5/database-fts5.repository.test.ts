@@ -255,6 +255,194 @@ describe('database-fts5 repository', () => {
       });
     });
 
+    describe('hidden tags', () => {
+      test('documents tagged with a hidden tag are excluded from results', async () => {
+        const documents = [
+          {
+            id: 'doc_1',
+            organizationId: 'org_1',
+            name: 'Secret 1',
+            originalName: 'secret-1.pdf',
+            content: 'lorem ipsum',
+            originalStorageKey: '',
+            mimeType: 'application/pdf',
+            originalSha256Hash: 'hash1',
+            isDeleted: false,
+          },
+          {
+            id: 'doc_2',
+            organizationId: 'org_1',
+            name: 'Public 2',
+            originalName: 'public-2.pdf',
+            content: 'lorem ipsum',
+            originalStorageKey: '',
+            mimeType: 'application/pdf',
+            originalSha256Hash: 'hash2',
+            isDeleted: false,
+          },
+          {
+            id: 'doc_3',
+            organizationId: 'org_1',
+            name: 'Public 3',
+            originalName: 'public-3.pdf',
+            content: 'lorem ipsum',
+            originalStorageKey: '',
+            mimeType: 'application/pdf',
+            originalSha256Hash: 'hash3',
+            isDeleted: false,
+          },
+        ];
+
+        const { db } = await createInMemoryDatabase({
+          organizations: [{ id: 'org_1', name: 'Organization 1' }],
+          documents,
+          tags: [
+            {
+              id: 'tag_hidden',
+              organizationId: 'org_1',
+              name: 'hidden',
+              normalizedName: 'hidden',
+              color: '#ff0000',
+              isVisible: false,
+            },
+            {
+              id: 'tag_visible',
+              organizationId: 'org_1',
+              name: 'visible',
+              normalizedName: 'visible',
+              color: '#00ff00',
+              isVisible: true,
+            },
+          ],
+          documentsTags: [
+            { documentId: 'doc_1', tagId: 'tag_hidden' },
+            { documentId: 'doc_2', tagId: 'tag_visible' },
+          ],
+        });
+
+        const documentsSearchRepository = createDocumentSearchRepository({ db });
+
+        await documentsSearchRepository.indexDocuments({ documents });
+
+        const { documents: searchResults, documentsCount } =
+          await documentsSearchRepository.searchOrganizationDocuments({
+            organizationId: 'org_1',
+            searchQuery: '',
+            pageIndex: 0,
+            pageSize: 10,
+          });
+
+        expect(searchResults.map((doc) => doc.id).toSorted()).to.eql(['doc_2', 'doc_3']);
+        expect(documentsCount).to.equal(2);
+      });
+
+      test('a single hidden tag hides the document even when it also has visible tags', async () => {
+        const documents = [
+          {
+            id: 'doc_1',
+            organizationId: 'org_1',
+            name: 'Mixed',
+            originalName: 'mixed.pdf',
+            content: 'lorem ipsum',
+            originalStorageKey: '',
+            mimeType: 'application/pdf',
+            originalSha256Hash: 'hash1',
+            isDeleted: false,
+          },
+        ];
+
+        const { db } = await createInMemoryDatabase({
+          organizations: [{ id: 'org_1', name: 'Organization 1' }],
+          documents,
+          tags: [
+            {
+              id: 'tag_hidden',
+              organizationId: 'org_1',
+              name: 'hidden',
+              normalizedName: 'hidden',
+              color: '#ff0000',
+              isVisible: false,
+            },
+            {
+              id: 'tag_visible',
+              organizationId: 'org_1',
+              name: 'visible',
+              normalizedName: 'visible',
+              color: '#00ff00',
+              isVisible: true,
+            },
+          ],
+          documentsTags: [
+            { documentId: 'doc_1', tagId: 'tag_hidden' },
+            { documentId: 'doc_1', tagId: 'tag_visible' },
+          ],
+        });
+
+        const documentsSearchRepository = createDocumentSearchRepository({ db });
+
+        await documentsSearchRepository.indexDocuments({ documents });
+
+        const { documents: searchResults, documentsCount } =
+          await documentsSearchRepository.searchOrganizationDocuments({
+            organizationId: 'org_1',
+            searchQuery: '',
+            pageIndex: 0,
+            pageSize: 10,
+          });
+
+        expect(searchResults).to.have.length(0);
+        expect(documentsCount).to.equal(0);
+      });
+
+      test('a hidden tag in another organization does not hide documents', async () => {
+        const documents = [
+          {
+            id: 'doc_1',
+            organizationId: 'org_1',
+            name: 'Visible',
+            originalName: 'visible.pdf',
+            content: 'lorem ipsum',
+            originalStorageKey: '',
+            mimeType: 'application/pdf',
+            originalSha256Hash: 'hash1',
+            isDeleted: false,
+          },
+        ];
+
+        const { db } = await createInMemoryDatabase({
+          organizations: [
+            { id: 'org_1', name: 'Organization 1' },
+            { id: 'org_2', name: 'Organization 2' },
+          ],
+          documents,
+          tags: [
+            {
+              id: 'tag_hidden_org2',
+              organizationId: 'org_2',
+              name: 'hidden',
+              normalizedName: 'hidden',
+              color: '#ff0000',
+              isVisible: false,
+            },
+          ],
+        });
+
+        const documentsSearchRepository = createDocumentSearchRepository({ db });
+
+        await documentsSearchRepository.indexDocuments({ documents });
+
+        const { documents: searchResults } =
+          await documentsSearchRepository.searchOrganizationDocuments({
+            organizationId: 'org_1',
+            searchQuery: '',
+            pageIndex: 0,
+            pageSize: 10,
+          });
+
+        expect(searchResults.map((doc) => doc.id)).to.eql(['doc_1']);
+      });
+    });
+
     describe('pagination', () => {
       test('pagination permits retrieving subsequent pages of results', async () => {
         const documents = Array.from({ length: 25 }).map((_, index) => ({

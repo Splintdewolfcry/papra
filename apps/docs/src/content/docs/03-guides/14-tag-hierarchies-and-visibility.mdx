@@ -29,14 +29,16 @@ belongs to (`LA`) is already displayed above it. When filtering, the whole path 
 
 ## Tag visibility
 
-Every tag is visible by default. A hidden tag is not suggested in the tag pickers anymore, which is
-useful for tags maintained by tagging rules or by document auto tagging that you don't want to see
-in your day to day tagging flows.
+Every tag is visible by default. Hiding a tag does two things: it stops the tag from being suggested
+in the tag pickers, and it hides the documents the tag is attached to from the document list, for
+everyone in the organization.
 
 Hidden tags:
 
 - are not suggested in tag pickers, unless they are already attached to the document you are editing
   (so you can still remove them);
+- hide the documents they are attached to from the document list — a document with a hidden tag is
+  not shown, even if it also carries visible tags;
 - are still attached to documents, applied by tagging rules and returned by the API;
 - are displayed in a lighter color in the tags settings page, where their visibility can be toggled
   with the eye icon;
